@@ -19,7 +19,7 @@ of(context);
       trailing:
           // without container will make an error we cannot use row inside listTile
           Container(
-        width: 100,
+        width: 101,
         child: Row(
           children: [
             IconButton(
