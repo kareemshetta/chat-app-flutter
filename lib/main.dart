@@ -57,7 +57,7 @@ class MyApp extends StatelessWidget {
         child: Consumer<Auth>(
           builder: (ctx, auth, _) => MaterialApp(
             debugShowCheckedModeBanner: false,
-            title: 'Shop App',
+            title: ' Flutter Shop App',
             theme: ThemeData(
                 colorScheme: ColorScheme.light().copyWith(
                     primary: Colors.purple, secondary: Colors.deepOrange),
