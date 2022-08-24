@@ -1,308 +1,100 @@
 import 'dart:io';
-import 'dart:math';
 
+import 'package:chat_app/widgets/auth_form.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../provider/auth.dart';
 
-enum AuthMode { Signup, Login }
-
-class AuthScreen extends StatelessWidget {
-  static const routeName = '/auth';
+class AuthScreen extends StatefulWidget {
+  const AuthScreen({Key? key}) : super(key: key);
 
   @override
-  Widget build(BuildContext context) {
-    final deviceSize = MediaQuery.of(context).size;
-    // final transformConfig = Matrix4.rotationZ(-8 * pi / 180);
-    // transformConfig.translate(-10.0);
-    return Scaffold(
-      // resizeToAvoidBottomInset: false,
-      body: Stack(
-        children: <Widget>[
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Color.fromRGBO(215, 117, 255, 1).withOpacity(0.5),
-                  Color.fromRGBO(255, 188, 117, 1).withOpacity(0.9),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                stops: [0, 1],
-              ),
-            ),
-          ),
-          SingleChildScrollView(
-            child: Container(
-              height: deviceSize.height,
-              width: deviceSize.width,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: <Widget>[
-                  Flexible(
-                    child: Container(
-                      margin: EdgeInsets.only(bottom: 20.0),
-                      padding:
-                          EdgeInsets.symmetric(vertical: 8.0, horizontal: 94.0),
-                      transform: Matrix4.rotationZ(-8 * pi / 180)
-                        ..translate(-10.0),
-                      // ..translate(-10.0),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
-                        color: Colors.deepOrange.shade900,
-                        boxShadow: [
-                          BoxShadow(
-                            blurRadius: 8,
-                            color: Colors.black26,
-                            offset: Offset(0, 2),
-                          )
-                        ],
-                      ),
-                      child: Text(
-                        'MyShop',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onPrimary,
-                          fontSize: 50,
-                          fontFamily: 'Anton',
-                          fontWeight: FontWeight.normal,
-                        ),
-                      ),
-                    ),
-                  ),
-                  Flexible(
-                    flex: deviceSize.width > 600 ? 2 : 1,
-                    child: AuthCard(),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  State<AuthScreen> createState() => _AuthScreenState();
 }
 
-class AuthCard extends StatefulWidget {
-  const AuthCard({
-    Key? key,
-  }) : super(key: key);
-
-  @override
-  _AuthCardState createState() => _AuthCardState();
-}
-
-class _AuthCardState extends State<AuthCard>
-    with SingleTickerProviderStateMixin {
-  final GlobalKey<FormState> _formKey = GlobalKey();
-  AuthMode _authMode = AuthMode.Login;
-  Map<String, String> _authData = {
-    'email': '',
-    'password': '',
-  };
+class _AuthScreenState extends State<AuthScreen> {
   var _isLoading = false;
-  final _passwordController = TextEditingController();
-  late AnimationController _controller;
-  late Animation<Offset> _slideAnimation;
-  late Animation<double> _opacityAnimation;
-  @override
-  void initState() {
-    _controller =
-        AnimationController(vsync: this, duration: Duration(milliseconds: 300));
-    _slideAnimation = Tween<Offset>(
-      begin: Offset(0, -1.5),
-      end:  Offset(0, 0.0),
-    ).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.fastOutSlowIn),
-    );
-    // when using animatedBuilder we don not need this listener
-    // _heightAnimation.addListener(() {
-    //   setState((){});
-    // });
-    _opacityAnimation = Tween(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeIn),
-    );
+  final firebaseAuth = FirebaseAuth.instance;
 
-    super.initState();
-  }
-
-  @override
-  void dispose() {
-    // TODO: implement dispose
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _showErrorDialog(String errorMessage) {
-    showDialog(
-        context: context,
-        builder: (ctx) {
-          return AlertDialog(
-            title: const Text('An error has occured'),
-            content: Text(errorMessage),
-            actions: [
-              TextButton(
-                  onPressed: () {
-                    Navigator.of(ctx).pop();
-                  },
-                  child: const Text('Okey'))
-            ],
-          );
-        });
-  }
-
-  void _submit() async {
-    if (!_formKey.currentState!.validate()) {
-      // Invalid!
-      return;
-    }
-    _formKey.currentState!.save();
-    setState(() {
-      _isLoading = true;
-    });
-
+  void submitForm(
+      {String? emailAddress,
+      String? userName,
+      String? password,
+      File? imgFile,
+      bool? isLogin}) async {
     try {
-      if (_authMode == AuthMode.Login) {
-        // Log user in
-        await Provider.of<Auth>(context, listen: false)
-            .signIn(_authData['email']!, _authData['password']!);
+      UserCredential authResult;
+      if (isLogin!) {
+        setState(() {
+          _isLoading = true;
+        });
+        // after sign user in auth result will contain user credential that's we use later
+        authResult = await firebaseAuth.signInWithEmailAndPassword(
+            email: emailAddress!, password: password!);
+        print(authResult);
       } else {
-        await Provider.of<Auth>(context, listen: false)
-            .signUp(_authData['email']!, _authData['password']!);
+        setState(() {
+          _isLoading = true;
+        });
+
+        authResult = await firebaseAuth.createUserWithEmailAndPassword(
+            email: emailAddress!, password: password!);
+        print(authResult);
+
+        /**
+         * here we create a bucket to store our data with name 'user_image'
+         * and then store user image with a name of the user  id to unique
+         * */
+
+        final ref = FirebaseStorage.instance
+            .ref()
+            .child('user_image')
+            .child('${authResult.user!.uid}.jpg');
+        if (imgFile != null) {
+          await ref.putFile(imgFile).whenComplete(() => null);
+        }
+        // here we get user image url as string
+        final imgUrl = await ref.getDownloadURL();
+        // when creating new user is done we will saving his username , email and his image url in our firestore database
+        // in collection 'user' in document 'userid' in collection with this data
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(authResult.user!.uid)
+            .set({
+          'userName': userName,
+          'email': authResult.user!.email,
+          'imgUrl': imgUrl
+        });
+        // after this will( setState) to close circular indicator in auth form
+        // setState(() {
+        //   _isLoading = false;
+        // });
       }
-    } on HttpException catch (error) {
-      var errorMessage = 'authentication failed';
-      if (error.toString().contains('EMAIL_EXISTS')) {
-        errorMessage = 'this email address is already in use.';
-      } else if (error.toString().contains('INVALID_EMAIL')) {
-        errorMessage = 'this is invalid email address ';
-      } else if (error.toString().contains('WEAK_PASSWORD')) {
-        errorMessage = 'this is a weak password';
-      } else if (error.toString().contains('INVALID_PASSWORD')) {
-        errorMessage = 'this is invalid password address ';
-      } else if (error.toString().contains('EMAIL_NOT_FOUND')) {
-        errorMessage = 'could n\t find user with this email ';
+    } on FirebaseAuthException catch (exception) {
+      setState(() {
+        _isLoading = false;
+      });
+      var errorMessage = 'an error has occurred .please check your credential';
+      if (exception.message != null) {
+        errorMessage = exception.message!;
       }
-      _showErrorDialog(errorMessage);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errorMessage),
+          backgroundColor: Theme.of(context).errorColor,
+        ),
+      );
     } catch (error) {
-      var errorMessage = 'we cannot authenticate you ,please try again later';
-      _showErrorDialog(errorMessage);
-    }
-
-    setState(() {
-      _isLoading = false;
-    });
-  }
-
-  void _switchAuthMode() {
-    if (_authMode == AuthMode.Login) {
-      setState(() {
-        _authMode = AuthMode.Signup;
-      });
-      _controller.forward();
-    } else {
-      setState(() {
-        _authMode = AuthMode.Login;
-      });
-      _controller.reverse();
+      print(error);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final deviceSize = MediaQuery.of(context).size;
-    return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10.0),
-      ),
-      elevation: 8.0,
-      child: AnimatedContainer(
-        width: deviceSize.width * 0.75,
-        padding: EdgeInsets.all(16.0),
-        duration: Duration(milliseconds: 300),
-        curve: Curves.fastOutSlowIn,
-        //    _heightAnimation.value.height
-        height: _authMode == AuthMode.Signup ? 320 : 260,
-        constraints:
-            BoxConstraints(minHeight: _authMode == AuthMode.Signup ? 320 : 260),
-        //  _heightAnimation.value.height
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              children: <Widget>[
-                TextFormField(
-                  decoration: InputDecoration(labelText: 'E-Mail'),
-                  keyboardType: TextInputType.emailAddress,
-                  validator: (value) {
-                    if (value!.isEmpty || !value.contains('@')) {
-                      return 'Invalid email!';
-                    }
-                  },
-                  onSaved: (value) {
-                    _authData['email'] = value!;
-                  },
-                ),
-                TextFormField(
-                  decoration: InputDecoration(labelText: 'Password'),
-                  obscureText: true,
-                  controller: _passwordController,
-                  validator: (value) {
-                    if (value!.isEmpty || value.length < 5) {
-                      return 'Password is too short!';
-                    }
-                  },
-                  onSaved: (value) {
-                    _authData['password'] = value!;
-                  },
-                ),
-                AnimatedContainer(
-                  duration: Duration(milliseconds: 300),
-                  curve: Curves.easeIn,
-                  constraints: BoxConstraints(
-                      maxHeight: _authMode == AuthMode.Signup ? 120 : 0,
-                      minHeight: _authMode == AuthMode.Signup ? 60.0 : 0.0),
-                  child: FadeTransition(
-                    opacity: _opacityAnimation,
-                    child: SlideTransition( position: _slideAnimation,
-                      child: TextFormField(
-                        enabled: _authMode == AuthMode.Signup,
-                        decoration:
-                            InputDecoration(labelText: 'Confirm Password'),
-                        obscureText: true,
-                        validator: _authMode == AuthMode.Signup
-                            ? (value) {
-                                if (value != _passwordController.text) {
-                                  return 'Passwords do not match!';
-                                }
-                              }
-                            : null,
-                      ),
-                    ),
-                  ),
-                ),
-                SizedBox(
-                  height: 20,
-                ),
-                if (_isLoading)
-                  CircularProgressIndicator()
-                else
-                  ElevatedButton(
-                    child:
-                        Text(_authMode == AuthMode.Login ? 'LOGIN' : 'SIGN UP'),
-                    onPressed: _submit,
-                  ),
-                TextButton(
-                  child: Text(
-                      '${_authMode == AuthMode.Login ? 'SIGNUP' : 'LOGIN'} INSTEAD'),
-                  onPressed: _switchAuthMode,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return Scaffold(
+      backgroundColor: Theme.of(context).primaryColor,
+      body: AuthForm(submitForm, _isLoading),
     );
   }
 }
